@@ -1,0 +1,547 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard | Hospital Referral System</title>
+  <link rel="stylesheet" href="{% static 'styles.css' %}" />
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">✚</div>
+        <div>
+          <strong>HRS</strong>
+          <span>Hospital Referral System</span>
+        </div>
+      </div>
+
+      <nav>
+        <button class="nav-link active" data-page="dashboard">Dashboard</button>
+        <button class="nav-link" data-page="patients">Patients</button>
+        <button class="nav-link" data-page="referrals">Referral Inbox</button>
+        <button class="nav-link" data-page="beds">Beds</button>
+        <button class="nav-link" data-page="history">Referral History</button>
+      </nav>
+      
+      <div class="role-info">
+        <p>CURRENT ROLE</p>
+        <strong>{{ profile.role }}</strong>
+        <span>{% if profile.role == 'Admin' %}Full system access{% else %}{{ profile.hospital.name }}{% endif %}</span>
+      </div>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <div>
+          <p>BATANGAS REFERRAL NETWORK</p>
+          <h1 id="pageTitle">Welcome, {{ request.user.username }} ({{ profile.role }})</h1>
+          <span id="roleText" class="muted"></span>
+        </div>
+        <div class="top-actions">
+          <input id="searchInput" placeholder="Search module items..." style="display: none;" />
+          <form action="{% url 'logout' %}" method="post" style="display: inline;">{% csrf_token %}<button class="secondary-btn" type="submit">Logout</button></form>
+        </div>
+      </header>
+
+      <section id="dashboard" class="page active-page">
+        <div class="dashboard-welcome">
+          <p>{% if is_admin %}Manage patients, referrals, and bed availability from one workspace.{% else %}Monitor incoming referrals, assigned patients, and live bed availability for {{ assigned_hospital.name }}.{% endif %}</p>
+          <div class="status-indicator">
+            <span class="status-dot"></span>
+            <span>System online</span>
+          </div>
+        </div>
+
+        <div class="dashboard-cards">
+          <article class="dashboard-card">
+            <div class="card-icon">P</div>
+            <h3>{% if is_admin %}Patients{% else %}Assigned Patients{% endif %}</h3>
+            <p>{% if is_admin %}Search, register, and review complete patient details using their patient ID.{% else %}Review patients currently referred to your hospital for care and monitoring.{% endif %}</p>
+            <a href="#" class="card-link" onclick="document.querySelector('[data-page=patients]').click(); return false;">Open module</a>
+          </article>
+          <article class="dashboard-card">
+            <div class="card-icon">R</div>
+            <h3>{% if is_admin %}Referral Inbox{% else %}Incoming Referrals{% endif %}</h3>
+            <p>{% if is_admin %}Track pending, accepted, and completed referrals between health facilities.{% else %}Track referrals sent to {{ assigned_hospital.name }} and update their status promptly.{% endif %}</p>
+            <a href="#" class="card-link" onclick="document.querySelector('[data-page=referrals]').click(); return false;">Open module</a>
+          </article>
+          <article class="dashboard-card">
+            <div class="card-icon">B</div>
+            <h3>{% if is_admin %}Bed Capacity{% else %}My Bed Capacity{% endif %}</h3>
+            <p>{% if is_admin %}Update available and total beds so referrals can be routed safely.{% else %}Keep your assigned hospital bed count accurate for safer referral routing.{% endif %}</p>
+            <a href="#" class="card-link" onclick="document.querySelector('[data-page=beds]').click(); return false;">Open module</a>
+          </article>
+        </div>
+
+        <div class="stats-grid">
+          <article><span>{% if is_admin %}Total Patients{% else %}Assigned Patients{% endif %}</span><strong>{{ patients|length }}</strong></article>
+          <article><span>{% if is_admin %}Pending Referrals{% else %}Pending Incoming{% endif %}</span><strong>{{ pending_count }}</strong></article>
+          <article><span>Bed Status</span><strong>{% for hospital in hospitals %}{{ hospital.level|slice:'6:' }} {{ hospital.bed_available }}/{{ hospital.bed_total }}{% if not forloop.last %} · {% endif %}{% endfor %}</strong></article>
+        </div>
+
+        <div class="cards-grid two-col dashboard-lists">
+          <article class="card">
+            <div class="dashboard-card-head">
+              <h3>{% if is_admin %}Priority Referrals{% else %}Priority Incoming Referrals{% endif %}</h3>
+              <a href="#" class="card-link" onclick="document.querySelector('[data-page=referrals]').click(); return false;">View all</a>
+            </div>
+            <div id="priorityList">
+              {% for referral in priority_referrals %}
+                <div class="dashboard-list-item">
+                  <div>
+                    <strong>{{ referral.patient.full_name }}</strong>
+                    <span>{{ referral.reason }}</span>
+                  </div>
+                  <span class="badge {% if referral.urgency == 'Emergency' %}red{% elif referral.urgency == 'Urgent' %}amber{% endif %}">{{ referral.urgency }}</span>
+                </div>
+              {% empty %}
+                <p>No urgent referrals.</p>
+              {% endfor %}
+            </div>
+          </article>
+          <article class="card">
+            <div class="dashboard-card-head">
+              <h3>Hospital Bed Snapshot</h3>
+              <a href="#" class="card-link" onclick="document.querySelector('[data-page=beds]').click(); return false;">Manage</a>
+            </div>
+            <div id="bedSnapshot">
+              {% for hospital in hospitals %}
+                <div class="dashboard-list-item">
+                  <div>
+                    <strong>{{ hospital.name }}</strong>
+                    <span>{{ hospital.bed_available }} of {{ hospital.bed_total }} beds available</span>
+                  </div>
+                  <span class="badge">{{ hospital.get_availability }}%</span>
+                </div>
+              {% endfor %}
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="patients" class="page">
+        <p class="page-subtitle">{% if is_admin %}Register patients and open their profile using the patient ID.{% else %}View patients referred to {{ assigned_hospital.name }} and open their clinical profile.{% endif %}</p>
+        {% if page_messages %}
+          <div class="page-messages">
+            {% for message in page_messages %}
+              {% if 'patient' in message|lower %}
+                <p class="message {% if message.tags == 'success' %}success{% endif %}">{{ message }}</p>
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+        <div class="section-head">
+          {% if is_admin %}<button class="primary-btn" data-open="patientModal">+ Register Patient</button>{% endif %}
+        </div>
+        <div class="table-container">
+          <table class="patients-table">
+            <thead>
+              <tr>
+                <th>PATIENT ID</th>
+                <th>NAME</th>
+                <th>AGE</th>
+                <th>ADDRESS</th>
+                <th>STATUS</th>
+                <th>ACTION</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for patient in patients %}
+                <tr data-search="{{ patient.full_name }} {{ patient.patient_id }} {{ patient.address }}">
+                  <td>{{ patient.patient_id }}</td>
+                  <td>{{ patient.full_name }}</td>
+                  <td>{{ patient.age }}</td>
+                  <td>{{ patient.address }}</td>
+                  <td><span class="badge">{{ patient.status }}</span></td>
+                  <td>
+                    <div class="action-buttons">
+                      <a class="secondary-btn" href="{% url 'patient_profile' patient.id %}">View Profile</a>
+                      <button class="danger-btn" type="button" onclick="openRemoveModal('{% url 'delete_patient' patient.id %}', '{{ patient.full_name }}')">Remove</button>
+                    </div>
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="6">No patients registered yet.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="referrals" class="page">
+        {% if page_messages %}
+          <div class="page-messages">
+            {% for message in page_messages %}
+              {% if 'referral' in message|lower %}
+                <p class="message {% if message.tags == 'success' %}success{% endif %}">{{ message }}</p>
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+        <div class="section-head">
+          <button id="addReferralBtn" class="primary-btn" data-open="referralModal">+ New Referral</button>
+        </div>
+        <div id="referralBoard" class="referral-columns">
+          <div class="referral-column">
+            <h3>Pending</h3>
+            {% for referral in referrals %}
+              {% if referral.status == 'Pending' %}
+                <article class="referral-card" data-search="{{ referral.patient.patient_id }} {{ referral.patient.full_name }} {{ referral.reason }} {{ referral.target_hospital.name }} {{ referral.status }} {{ referral.urgency }}">
+                  <h4>{{ referral.patient.full_name }}</h4>
+                  <p style="font-size: 0.85em; color: #666; margin-top: -8px; margin-bottom: 8px;">ID: {{ referral.patient.patient_id }}</p>
+                  <p>{{ referral.reason }}</p>
+                  <p><strong>To:</strong> {{ referral.target_hospital.name }}</p>
+                  <p><strong>Pathway:</strong> {{ referral.pathway }}</p>
+                  <p>{{ referral.notes }}</p>
+                  <p><span class="badge {% if referral.urgency == 'Emergency' %}red{% elif referral.urgency == 'Urgent' %}amber{% endif %}">{{ referral.urgency }}</span></p>
+                    <div class="card-actions">
+                    <a class="primary-btn" href="{% url 'accept_referral' referral.id %}">Accept</a>
+                    <a class="secondary-btn" href="{% url 'complete_referral' referral.id %}">Mark completed</a>
+                    <button class="danger-btn" type="button" onclick="openRemoveModal('{% url 'remove_referral' referral.id %}', '{{ referral.patient.full_name }}\'s referral card')">Remove</button>
+                  </div>
+                </article>
+              {% endif %}
+            {% endfor %}
+          </div>
+          <div class="referral-column">
+            <h3>Accepted</h3>
+            {% for referral in referrals %}
+              {% if referral.status == 'Accepted' %}
+                <article class="referral-card" data-search="{{ referral.patient.patient_id }} {{ referral.patient.full_name }} {{ referral.reason }} {{ referral.target_hospital.name }} {{ referral.status }} {{ referral.urgency }}">
+                  <h4>{{ referral.patient.full_name }}</h4>
+                  <p style="font-size: 0.85em; color: #666; margin-top: -8px; margin-bottom: 8px;">ID: {{ referral.patient.patient_id }}</p>
+                  <p>{{ referral.reason }}</p>
+                  <p><strong>To:</strong> {{ referral.target_hospital.name }}</p>
+                  <p><strong>Pathway:</strong> {{ referral.pathway }}</p>
+                  <p>{{ referral.notes }}</p>
+                  <p><span class="badge {% if referral.urgency == 'Emergency' %}red{% elif referral.urgency == 'Urgent' %}amber{% endif %}">{{ referral.urgency }}</span></p>
+                  <div class="card-actions">
+                    <a class="secondary-btn" href="{% url 'complete_referral' referral.id %}">Mark completed</a>
+                    <button class="danger-btn" type="button" onclick="openRemoveModal('{% url 'remove_referral' referral.id %}', '{{ referral.patient.full_name }}\'s referral card')">Remove</button>
+                  </div>
+                </article>
+              {% endif %}
+            {% endfor %}
+          </div>
+          <div class="referral-column">
+            <h3>Completed</h3>
+            {% for referral in referrals %}
+              {% if referral.status == 'Completed' %}
+                <article class="referral-card" data-search="{{ referral.patient.patient_id }} {{ referral.patient.full_name }} {{ referral.reason }} {{ referral.target_hospital.name }} {{ referral.status }} {{ referral.urgency }}">
+                  <h4>{{ referral.patient.full_name }}</h4>
+                  <p style="font-size: 0.85em; color: #666; margin-top: -8px; margin-bottom: 8px;">ID: {{ referral.patient.patient_id }}</p>
+                  <p>{{ referral.reason }}</p>
+                  <p><strong>To:</strong> {{ referral.target_hospital.name }}</p>
+                  <p><strong>Pathway:</strong> {{ referral.pathway }}</p>
+                  <p>{{ referral.notes }}</p>
+                  <p><span class="badge {% if referral.urgency == 'Emergency' %}red{% elif referral.urgency == 'Urgent' %}amber{% endif %}">{{ referral.urgency }}</span></p>
+                  <div class="card-actions">
+                    <button class="danger-btn" type="button" onclick="openRemoveModal('{% url 'remove_referral' referral.id %}', '{{ referral.patient.full_name }}\'s referral card')">Remove</button>
+                  </div>
+                </article>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+
+      <section id="beds" class="page">
+        <p class="page-subtitle">{% if is_admin %}Monitor and update bed availability for each facility level.{% else %}View all hospital bed availability and update only {{ assigned_hospital.name }}.{% endif %}</p>
+        <div id="bedCards" class="cards-grid">
+          {% for hospital in hospitals %}
+            <article class="bed-card" data-search="{{ hospital.name }} {{ hospital.level }} {{ hospital.address }}">
+              <h3>{{ hospital.name }}</h3>
+              <p><span class="badge">{{ hospital.level }}</span></p>
+              <p>{{ hospital.address }}</p>
+              <div class="bed-counts">
+                <div class="bed-count">
+                  <span>Available</span>
+                  <strong>{{ hospital.bed_available }}</strong>
+                </div>
+                <div class="bed-count">
+                  <span>Total</span>
+                  <strong>{{ hospital.bed_total }}</strong>
+                </div>
+              </div>
+              <p class="bed-updated">Last updated: {{ hospital.updated_at|date:"Y-m-d H:i" }}</p>
+            </article>
+          {% endfor %}
+        </div>
+        <div class="bed-management">
+          <h3>Manage Bed Availability</h3>
+          <form method="post" action="{% url 'update_beds' manageable_hospitals.0.id %}">
+            {% csrf_token %}
+            <label>Facility
+              <select name="facility_id" onchange="this.form.action = '/beds/' + this.value + '/update/'">
+                {% for hospital in manageable_hospitals %}
+                  <option value="{{ hospital.id }}" data-name="{{ hospital.name }}" data-address="{{ hospital.address }}" data-available="{{ hospital.bed_available }}" data-total="{{ hospital.bed_total }}">{{ hospital.name }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>Hospital Name
+              <input id="bedHospitalName" name="name" type="text" value="{{ manageable_hospitals.0.name }}" required />
+            </label>
+            <label>Address
+              <input id="bedHospitalAddress" name="address" type="text" value="{{ manageable_hospitals.0.address }}" required />
+            </label>
+            <label>Available Beds
+              <input id="bedHospitalAvailable" name="available" type="number" value="{{ manageable_hospitals.0.bed_available }}" min="0" required />
+            </label>
+            <label>Total Beds
+              <input id="bedHospitalTotal" name="total" type="number" value="{{ manageable_hospitals.0.bed_total }}" min="1" required />
+            </label>
+            <button class="primary-btn" type="submit">Update Beds</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="history" class="page">
+        <div class="history-page-head">
+          <p>View chronological referral records grouped by Hospital A, Hospital B, and Hospital C.</p>
+        </div>
+        <div id="historyBoard" class="history-grid">
+          <article class="card history-card">
+            <div class="history-card-head">
+              <div>
+                <h3>Hospital A</h3>
+                <p>Barangay Health Center</p>
+              </div>
+              <span class="history-count">{{ hospital_a_referrals|length }} record{{ hospital_a_referrals|length|pluralize }}</span>
+            </div>
+            {% for referral in hospital_a_referrals %}
+              <div class="history-item" data-search="{{ referral.patient.patient_id }} {{ referral.patient.full_name }} {{ referral.reason }} {{ referral.status }} {{ referral.urgency }}">
+                <span class="history-number">{{ forloop.counter }}</span>
+                <div class="history-details">
+                  <strong>{{ referral.patient.full_name }} <span style="font-weight: normal; color: #666;">({{ referral.patient.patient_id }})</span></strong>
+                  <span>{{ referral.reason }}</span>
+                  <small>{{ referral.created_at|date:"Y-m-d H:i:s" }} · {{ referral.status }} · {{ referral.urgency }}</small>
+                </div>
+                <button class="danger-btn compact-btn" type="button" onclick="openRemoveModal('{% url 'delete_referral' referral.id %}', 'this referral history record')">Delete</button>
+              </div>
+            {% empty %}
+              <p>No records yet.</p>
+            {% endfor %}
+          </article>
+          <article class="card history-card">
+            <div class="history-card-head">
+              <div>
+                <h3>Hospital B</h3>
+                <p>District Hospital</p>
+              </div>
+              <span class="history-count">{{ hospital_b_referrals|length }} record{{ hospital_b_referrals|length|pluralize }}</span>
+            </div>
+            {% for referral in hospital_b_referrals %}
+              <div class="history-item" data-search="{{ referral.patient.patient_id }} {{ referral.patient.full_name }} {{ referral.reason }} {{ referral.status }} {{ referral.urgency }}">
+                <span class="history-number">{{ forloop.counter }}</span>
+                <div class="history-details">
+                  <strong>{{ referral.patient.full_name }} <span style="font-weight: normal; color: #666;">({{ referral.patient.patient_id }})</span></strong>
+                  <span>{{ referral.reason }}</span>
+                  <small>{{ referral.created_at|date:"Y-m-d H:i:s" }} · {{ referral.status }} · {{ referral.urgency }}</small>
+                </div>
+                <button class="danger-btn compact-btn" type="button" onclick="openRemoveModal('{% url 'delete_referral' referral.id %}', 'this referral history record')">Delete</button>
+              </div>
+            {% empty %}
+              <p>No records yet.</p>
+            {% endfor %}
+          </article>
+          <article class="card history-card">
+            <div class="history-card-head">
+              <div>
+                <h3>Hospital C</h3>
+                <p>Batangas Medical Center</p>
+              </div>
+              <span class="history-count">{{ hospital_c_referrals|length }} record{{ hospital_c_referrals|length|pluralize }}</span>
+            </div>
+            {% for referral in hospital_c_referrals %}
+              <div class="history-item" data-search="{{ referral.patient.patient_id }} {{ referral.patient.full_name }} {{ referral.reason }} {{ referral.status }} {{ referral.urgency }}">
+                <span class="history-number">{{ forloop.counter }}</span>
+                <div class="history-details">
+                  <strong>{{ referral.patient.full_name }} <span style="font-weight: normal; color: #666;">({{ referral.patient.patient_id }})</span></strong>
+                  <span>{{ referral.reason }}</span>
+                  <small>{{ referral.created_at|date:"Y-m-d H:i:s" }} · {{ referral.status }} · {{ referral.urgency }}</small>
+                </div>
+                <button class="danger-btn compact-btn" type="button" onclick="openRemoveModal('{% url 'delete_referral' referral.id %}', 'this referral history record')">Delete</button>
+              </div>
+            {% empty %}
+              <p>No records yet.</p>
+            {% endfor %}
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="patientModal" class="modal">
+    <form method="post" action="{% url 'add_patient' %}">
+      {% csrf_token %}
+      <div class="modal-header">
+        <div>
+          <p class="referral-form-text">PATIENT REGISTRATION</p>
+          <h2 class="modal-title"><b>Add New Patient</b></h2>
+        </div>
+        <button type="button" class="close-btn" data-close="patientModal">×</button>
+      </div>
+      <label>Full Name <input name="name" required placeholder="Last Name, First Name" /></label>
+      <label>Age <input name="age" type="number" min="0" required placeholder="" /></label>
+      <label>Sex <select name="sex"><option>Female</option><option>Male</option></select></label>
+      <label>Emergency Contact <input name="emergency" required placeholder="09XXXXXXXXX" /></label>
+      <label class="wide-field">Address <input name="address" required placeholder="Complete address" /></label>
+      <label>Allergies <input name="allergies" placeholder="None recorded" /></label>
+      <label>Chronic Conditions <input name="chronic" placeholder="None recorded" /></label>
+      <label class="wide-field">Previous Surgeries <input name="surgeries" placeholder="None recorded" /></label>
+      <div class="modal-actions">
+        <button class="secondary-btn" type="button" data-close="patientModal">Cancel</button>
+        <button class="primary-btn" type="submit">Save Patient</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="referralModal" class="modal">
+    <form method="post" action="{% url 'add_referral' %}">
+      {% csrf_token %}
+      <div class="modal-header">
+        <div>
+          <p class="referral-form-text">REFERRAL FORM</p>
+          <h2 class="modal-title"><b>Create Patient Referral</b></h2>
+        </div>
+        <button type="button" class="close-btn" data-close="referralModal">×</button>
+      </div>
+      <label>Patient
+        <select name="patient_id">{% for patient in patients %}<option value="{{ patient.id }}">{{ patient.full_name }}</option>{% endfor %}</select>
+      </label>
+      <label>Receiving Facility
+        <select name="hospital_id">{% for hospital in receiving_hospitals %}<option value="{{ hospital.id }}">{{ hospital.name }}</option>{% endfor %}</select>
+      </label>
+      <label>Urgency
+        <select name="urgency"><option>Routine</option><option>Urgent</option><option>Emergency</option></select>
+      </label>
+      <label>Reason for Referral
+        <select name="reason"><option>Cardiology evaluation</option><option>Pediatric observation</option><option>Pulmonology Evaluation</option><option>Follow-up consultation</option><option>Other</option></select>
+      </label>
+      <label class="wide-field">Clinical Notes <textarea name="notes" placeholder=""></textarea></label>
+      <div class="modal-actions">
+        <button class="secondary-btn" type="button" data-close="referralModal">Cancel</button>
+        <button class="primary-btn" type="submit">Submit Referral</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="removeConfirmModal" class="modal">
+    <div class="modal-header">
+      <div>
+        <p class="referral-form-text">SYSTEM CONFIRMATION</p>
+        <h2 class="modal-title"><b>Confirm Removal</b></h2>
+      </div>
+      <button type="button" class="close-btn" data-close="removeConfirmModal">×</button>
+    </div>
+    <div style="margin: 20px 0;">
+      <p style="color: #333; font-size: 14px;">Are you sure you want to permanently delete/remove <strong id="removeConfirmTargetName">this record</strong>?</p>
+      <p style="color: #666; font-size: 12px; margin-top: 6px;">This modification affects live hospital assignment entries.</p>
+    </div>
+    <div class="modal-actions">
+      <button class="secondary-btn" type="button" data-close="removeConfirmModal">Cancel</button>
+      <a id="removeConfirmAnchor" class="danger-btn" href="#" style="text-align: center; text-decoration: none; display: inline-block; line-height: 2.3;">Confirm Delete</a>
+    </div>
+  </dialog>
+
+  <script>
+    const searchInput = document.getElementById('searchInput');
+    const pageTitle = document.getElementById('pageTitle');
+    
+    document.querySelectorAll('.nav-link').forEach(button => button.addEventListener('click', () => {
+      document.querySelectorAll('.page').forEach(page => page.classList.toggle('active-page', page.id === button.dataset.page));
+      document.querySelectorAll('.nav-link').forEach(link => link.classList.toggle('active', link === button));
+      
+      const pageTitles = {
+        dashboard: 'Welcome, {{ request.user.username }} ({{ profile.role }})',
+        patients: 'Patients',
+        referrals: 'Referral Inbox',
+        beds: 'Bed Capacity Dashboard',
+        history: 'Referral History'
+      };
+      pageTitle.textContent = pageTitles[button.dataset.page] || button.textContent;
+      
+      if (button.dataset.page === 'dashboard') {
+        history.pushState(null, '', window.location.pathname);
+      } else {
+        history.pushState(null, '', `?page=${button.dataset.page}`);
+      }
+      
+      if (searchInput) {
+        searchInput.value = '';
+        if (button.dataset.page === 'dashboard') {
+          searchInput.style.display = 'none';
+        } else {
+          searchInput.style.display = '';
+        }
+      }
+      document.querySelectorAll('[data-search]').forEach(item => item.style.display = '');
+    }));
+    
+    document.querySelectorAll('[data-open]').forEach(button => button.addEventListener('click', () => {
+      const targetModal = document.getElementById(button.dataset.open);
+      if (targetModal) targetModal.showModal();
+    }));
+    
+    document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => {
+      const targetModal = document.getElementById(button.dataset.close);
+      if (targetModal) targetModal.close();
+    }));
+    
+    // FIX: SYSTEM CONTROLLER FUNCTION FOR OPENING REMOVAL DIALOG AND STICKING TO ACTIVE WORKSPACE
+    window.openRemoveModal = function(targetUrl, itemName) {
+      const modal = document.getElementById('removeConfirmModal');
+      const targetText = document.getElementById('removeConfirmTargetName');
+      const actionLink = document.getElementById('removeConfirmAnchor');
+      
+      if (modal && actionLink) {
+        // Read current active tab dataset parameter identifier
+        const activeTabButton = document.querySelector('.nav-link.active');
+        const currentTabName = activeTabButton ? activeTabButton.dataset.page : 'dashboard';
+        
+        // Append the page routing suffix explicitly to force view tab state alignment
+        actionLink.href = targetUrl + `?page=${currentTabName}`;
+        if (targetText) targetText.textContent = itemName;
+        
+        modal.showModal();
+      }
+    };
+    
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        const keyword = searchInput.value.toLowerCase();
+        document.querySelectorAll('.active-page [data-search]').forEach(item => {
+          item.style.display = item.dataset.search.toLowerCase().includes(keyword) ? '' : 'none';
+        });
+      });
+    }
+    
+    const facilitySelect = document.querySelector('select[name="facility_id"]');
+    const bedHospitalName = document.getElementById('bedHospitalName');
+    const bedHospitalAddress = document.getElementById('bedHospitalAddress');
+    const bedHospitalAvailable = document.getElementById('bedHospitalAvailable');
+    const bedHospitalTotal = document.getElementById('bedHospitalTotal');
+    
+    if (facilitySelect) {
+      facilitySelect.addEventListener('change', () => {
+        const option = facilitySelect.selectedOptions[0];
+        bedHospitalName.value = option.dataset.name;
+        bedHospitalAddress.value = option.dataset.address;
+        bedHospitalAvailable.value = option.dataset.available;
+        bedHospitalTotal.value = option.dataset.total;
+      });
+    }
+    
+    const requestedPage = new URLSearchParams(window.location.search).get('page') || 'dashboard';
+    const requestedButton = document.querySelector(`[data-page="${requestedPage}"]`);
+    if (requestedButton) {
+      requestedButton.click();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Patient Profile | Hospital Referral System</title>
+  <link rel="stylesheet" href="{% static 'styles.css' %}" />
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">✚</div>
+        <div>
+          <strong>HRS</strong>
+          <span>Hospital Referral System</span>
+        </div>
+      </div>
+
+      <nav>
+        <a class="nav-link" href="{% url 'dashboard' %}?page=dashboard">Dashboard</a>
+        <a class="nav-link active" href="{% url 'dashboard' %}?page=patients">Patients</a>
+        <a class="nav-link" href="{% url 'dashboard' %}?page=referrals">Referral Inbox</a>
+        <a class="nav-link" href="{% url 'dashboard' %}?page=beds">Beds</a>
+        <a class="nav-link" href="{% url 'dashboard' %}?page=history">Referral History</a>
+      </nav>
+      
+      <div class="role-info">
+        <p>CURRENT ROLE</p>
+        <strong>{{ profile.role }}</strong>
+        <span>{% if profile.role == 'Admin' %}Full system access{% else %}{{ profile.hospital.name }}{% endif %}</span>
+      </div>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <div>
+          <p>BATANGAS REFERRAL NETWORK</p>
+          <h1>Patient Profile</h1>
+          <span class="muted">Review demographics, medical history, and referral activity.</span>
+        </div>
+        <div class="top-actions">
+          <form action="{% url 'logout' %}" method="post" style="display: inline;">{% csrf_token %}<button class="secondary-btn" type="submit">Logout</button></form>
+        </div>
+      </header>
+
+      {% if messages %}
+        {% for message in messages %}
+          <p class="message {% if message.tags == 'success' %}success{% endif %}">{{ message }}</p>
+        {% endfor %}
+      {% endif %}
+
+      <section class="page active-page">
+        <div class="patient-header">
+          <h2>{{ patient.full_name }}</h2>
+          <p>Patient ID: {{ patient.patient_id }}</p>
+          <div class="patient-actions">
+            <button class="primary-btn" data-open="referralModal">+ Create Referral</button>
+            <a class="secondary-btn" href="{% url 'dashboard' %}?page=patients">Back to List</a>
+          </div>
+        </div>
+
+        <div class="patient-details">
+          <article class="card">
+            <h3>Demographics</h3>
+            <p><strong>Age:</strong> {{ patient.age }}</p>
+            <p><strong>Sex:</strong> {{ patient.sex }}</p>
+            <p><strong>Address:</strong> {{ patient.address }}</p>
+            <p><strong>Emergency Contact:</strong> {{ patient.emergency_contact }}</p>
+            <p><strong>Registered:</strong> {{ patient.created_at|date:"Y-m-d" }}</p>
+          </article>
+
+          <article class="card">
+            <h3>Medical History</h3>
+            <p><strong>Allergies:</strong> {{ patient.allergies }}</p>
+            <p><strong>Chronic Conditions:</strong> {{ patient.chronic_conditions }}</p>
+            <p><strong>Previous Surgeries:</strong> {{ patient.previous_surgeries|default:"None recorded" }}</p>
+          </article>
+        </div>
+
+        <article class="card" style="margin-top: 16px;">
+          <h3>Referral History</h3>
+          {% for referral in referral_history %}
+            <p><strong>{{ referral.target_hospital.name }}</strong> · {{ referral.reason }} · {{ referral.status }} · {{ referral.urgency }}</p>
+          {% empty %}
+            <p>No referral history yet.</p>
+          {% endfor %}
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="referralModal" class="modal">
+    <form method="post" action="{% url 'add_referral' %}">
+      {% csrf_token %}
+      <div class="modal-header">
+        <div>
+          <p class="referral-form-text">REFERRAL FORM</p>
+          <h2 class="modal-title"><b>Create Patient Referral</b></h2>
+        </div>
+        <button type="button" class="close-btn" data-close="referralModal">×</button>
+      </div>
+      <input type="hidden" name="patient_id" value="{{ patient.id }}" />
+      <label>Patient
+        <input type="text" value="{{ patient.full_name }}" readonly />
+      </label>
+      
+      <label>Receiving Facility
+        <select name="hospital_id">{% for hospital in receiving_hospitals %}<option value="{{ hospital.id }}">{{ hospital.name }}</option>{% endfor %}</select>
+      </label>
+      
+      <label>Urgency
+        <select name="urgency"><option>Routine</option><option>Urgent</option><option>Emergency</option></select>
+      </label>
+      <label>Reason for Referral
+        <select name="reason"><option>Cardiology evaluation</option><option>Pediatric observation</option><option>Pulmonology Evaluation</option><option>Follow-up consultation</option><option>Other</option></select>
+      </label>
+      <label class="wide-field">Clinical Notes <textarea name="notes" placeholder="Assessment, vital signs, diagnosis, or transfer instructions"></textarea></label>
+      <div class="modal-actions">
+        <button class="secondary-btn" type="button" data-close="referralModal">Cancel</button>
+        <button class="primary-btn" type="submit">Submit Referral</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    document.querySelectorAll('[data-open]').forEach(button => button.addEventListener('click', () => {
+      const targetModal = document.getElementById(button.dataset.open);
+      if (targetModal) targetModal.showModal();
+    }));
+    document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => {
+      const targetModal = document.getElementById(button.dataset.close);
+      if (targetModal) targetModal.close();
+    }));
+  </script>
+</body>
+</html>
